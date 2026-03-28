@@ -5,13 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>我的青春音樂祭 🎵 - Anime JukeBox</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 
     <style>
-        /* CSS 樣式與之前完全相同，保持動漫粉嫩風 */
         :root {
-            var(--anime-pink): #FFC0CB; 
             --anime-pink: #FFC0CB;
             --anime-pink-dark: #FF9EBB;
             --anime-cream: #FFF5F5;
@@ -41,15 +38,15 @@
         .track-item { padding: 10px 15px; border-radius: 10px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; color: var(--anime-text); font-size: 0.9rem; margin-bottom: 5px; }
         .track-item:hover { background: #FFEBEB; }
         .track-item.active { background-color: var(--anime-pink); color: white; font-weight: bold; }
-        .loading-text { font-size: 0.9rem; color: var(--anime-pink-dark); font-weight: bold; }
+        .status-text { font-size: 0.8rem; color: #888; margin-top: 10px; }
     </style>
 </head>
 <body>
 
     <div class="player-card">
         <div class="album-art"><i class="fas fa-music"></i></div>
-        <h2 id="currentTitle">請稍候...</h2>
-        <p id="currentArtist">正在讀取音樂資訊</p>
+        <h2 id="currentTitle">選擇一首金曲吧！</h2>
+        <p id="currentArtist">Anime JukeBox</p>
 
         <audio id="mainAudio">
             <source id="audioSource" src="" type="audio/mpeg">
@@ -66,25 +63,33 @@
 
         <div class="controls">
             <button class="ctrl-btn" id="prevBtn" title="上一首"><i class="fas fa-backward"></i></button>
-            <button class="play-pause-btn" id="playPauseBtn" title="播放/暫停" disabled><i class="fas fa-play"></i></button>
+            <button class="play-pause-btn" id="playPauseBtn" title="播放/暫停"><i class="fas fa-play"></i></button>
             <button class="ctrl-btn" id="nextBtn" title="下一首"><i class="fas fa-forward"></i></button>
         </div>
 
         <div class="playlist" id="playlist">
-            <div class="loading-text" id="loadingMsg"><i class="fas fa-spinner fa-spin"></i> 正在解析 MP3 標籤...</div>
-        </div>
+            </div>
+        <div class="status-text" id="statusMsg">✨ 正在背景更新真實歌名...</div>
     </div>
 
     <script>
-        // === 1. 你只需要在這裡填寫你的檔案路徑 ===
-        // 請確保這些檔案真的存在於 GitHub 的資料夾中
+        // === 1. 音樂檔案路徑清單 ===
         const musicFiles = [
             'music/song1.mp3',
             'music/song2.mp3',
             'music/song3.mp3'
         ];
 
-        let songList = []; // 這個陣列會由 jsmediatags 自動填入真實資訊
+        // === 2. 瞬間秒開：先用檔名建立清單 ===
+        let songList = musicFiles.map(file => {
+            // 取出檔名，去掉 .mp3，例如 'music/song1.mp3' 變成 'song1'
+            let defaultName = file.split('/').pop().replace('.mp3', '');
+            return {
+                title: defaultName,
+                artist: '未知歌手',
+                path: file
+            };
+        });
 
         const audio = document.getElementById('mainAudio');
         const source = document.getElementById('audioSource');
@@ -93,68 +98,72 @@
         const artistDisplay = document.getElementById('currentArtist');
         const playPauseBtn = document.getElementById('playPauseBtn');
         const playPauseIcon = playPauseBtn.querySelector('i');
-        const loadingMsg = document.getElementById('loadingMsg');
+        const statusMsg = document.getElementById('statusMsg');
 
         let currentSongIndex = 0;
         let isPlaying = false;
         let isShuffle = false;
         let repeatMode = 0;
 
-        // === 2. 核心功能：使用 jsmediatags 非同步讀取 MP3 標籤 ===
-        async function loadAllTags() {
-            const jsmediatags = window.jsmediatags;
-            
-            // 使用 Promise 確保所有檔案都讀取完畢才建立清單
-            const tagPromises = musicFiles.map(file => {
-                return new Promise((resolve) => {
-                    jsmediatags.read(file, {
-                        onSuccess: function(tag) {
-                            // 成功讀取到標籤
-                            const tags = tag.tags;
-                            // 如果 MP3 裡面沒有歌名，就拿檔名當備用
-                            const title = tags.title || file.split('/').pop().replace('.mp3', '');
-                            const artist = tags.artist || '未知歌手';
-                            resolve({ title: title, artist: artist, path: file });
-                        },
-                        onError: function(error) {
-                            // 讀取失敗或檔案沒有標籤，直接使用檔名
-                            console.log('無法讀取標籤: ', file);
-                            resolve({ 
-                                title: file.split('/').pop().replace('.mp3', ''), 
-                                artist: '未知歌手', 
-                                path: file 
-                            });
-                        }
-                    });
-                });
-            });
-
-            // 等待所有音樂解析完成
-            songList = await Promise.all(tagPromises);
-            
-            // 解析完成後，移除載入中訊息，開放按鈕，並建立清單
-            loadingMsg.style.display = 'none';
-            playPauseBtn.disabled = false;
-            titleDisplay.innerText = "選擇一首金曲吧！";
-            artistDisplay.innerText = "Anime JukeBox";
-            initPlaylist();
-        }
-
-        // === 下方是原本的播放器邏輯 ===
+        // === 3. 初始化 UI (不用等下載，立刻顯示) ===
         function initPlaylist() {
-            playlistContainer.innerHTML = ''; // 清空
+            playlistContainer.innerHTML = ''; 
             songList.forEach((song, index) => {
                 const item = document.createElement('div');
                 item.className = 'track-item';
-                item.innerHTML = `<span>${song.title}</span>`;
+                item.id = `track-${index}`; // 給每個項目一個 ID 方便之後更新
+                item.innerHTML = `<span class="track-title">${song.title}</span>`;
                 item.onclick = () => playSong(index);
                 playlistContainer.appendChild(item);
             });
         }
+        initPlaylist();
 
+        // === 4. 背景非同步讀取標籤：慢慢把檔名替換成真名 ===
+        function loadTagsInBackground() {
+            const jsmediatags = window.jsmediatags;
+            let loadedCount = 0;
+
+            songList.forEach((song, index) => {
+                jsmediatags.read(song.path, {
+                    onSuccess: function(tag) {
+                        const tags = tag.tags;
+                        if(tags.title) song.title = tags.title;
+                        if(tags.artist) song.artist = tags.artist;
+                        
+                        // 更新清單上的文字
+                        const trackSpan = document.querySelector(`#track-${index} .track-title`);
+                        if (trackSpan) trackSpan.innerText = song.title;
+
+                        // 如果這首歌剛好正在播放，連上面的大標題一起更新
+                        if (index === currentSongIndex && isPlaying) {
+                            titleDisplay.innerText = song.title;
+                            artistDisplay.innerText = song.artist;
+                        }
+                        
+                        checkFinished();
+                    },
+                    onError: function(error) {
+                        checkFinished(); // 就算失敗也算處理完畢
+                    }
+                });
+            });
+
+            function checkFinished() {
+                loadedCount++;
+                if (loadedCount === songList.length) {
+                    statusMsg.innerText = "✅ 歌單資訊已全部更新完成！";
+                    setTimeout(() => statusMsg.style.display = 'none', 3000); // 3秒後隱藏提示
+                }
+            }
+        }
+        
+        // 啟動背景更新
+        loadTagsInBackground();
+
+        // === 下方是播放器核心邏輯 (不變) ===
         function updatePlaylistHighlight() {
-            const items = document.querySelectorAll('.track-item');
-            items.forEach((item, index) => {
+            document.querySelectorAll('.track-item').forEach((item, index) => {
                 if (index === currentSongIndex) {
                     item.classList.add('active');
                     item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -179,7 +188,6 @@
         }
 
         function togglePlay() {
-            if (songList.length === 0) return; // 還沒載入完不能按
             if (source.src === "" || source.src.includes('music2/')) {
                 playSong(0);
                 return;
@@ -239,7 +247,6 @@
             else pauseAudio();
         }
 
-        // 綁定事件
         playPauseBtn.addEventListener('click', togglePlay);
         document.getElementById('prevBtn').addEventListener('click', prevSong);
         document.getElementById('nextBtn').addEventListener('click', nextSong);
@@ -248,9 +255,6 @@
         audio.addEventListener('ended', onAudioEnded);
         document.getElementById('shuffleBtn').addEventListener('click', toggleShuffle);
         document.getElementById('repeatBtn').addEventListener('click', cycleRepeatMode);
-
-        // === 3. 網頁開啟時，觸發讀取標籤的動作 ===
-        loadAllTags();
 
     </script>
 </body>
